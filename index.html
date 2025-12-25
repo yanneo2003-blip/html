@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="antialiased transition-colors duration-300">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>HTML Studio Pro (SVG Engine)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- [NEW] html-to-image (Replaces html2canvas) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.js"></script>
+    
+    <!-- [NEW] jsPDF for PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Nunjucks -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nunjucks/3.2.4/nunjucks.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
+                        mono: ['"SF Mono"', '"Menlo"', '"Monaco"', '"Courier New"', 'monospace'],
+                    },
+                    colors: {
+                        app: {
+                            bg: 'var(--app-bg)',
+                            surface: 'var(--app-surface)',
+                            surface2: 'var(--app-surface-2)',
+                            text: 'var(--app-text)',
+                            textSec: 'var(--app-text-sec)',
+                            border: 'var(--app-border)',
+                            accent: 'var(--app-accent)',
+                            danger: 'var(--app-danger)',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* --- Design Tokens --- */
+        :root {
+            --app-bg: #F5F5F7;
+            --app-surface: #FFFFFF;
+            --app-surface-2: #EBECF0;
+            --app-surface-glass: rgba(255, 255, 255, 0.85);
+            --app-text: #1D1D1F;
+            --app-text-sec: #86868B;
+            --app-border: rgba(0, 0, 0, 0.08);
+            --app-border-inner: rgba(0, 0, 0, 0.04);
+            --app-accent: #0071E3;
+            --app-danger: #FF3B30;
+            --app-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+            --segment-bg: rgba(118, 118, 128, 0.12);
+            --segment-indicator: #FFFFFF;
+            color-scheme: light;
+        }
+
+        html.dark {
+            --app-bg: #000000;
+            --app-surface: #1C1C1E;
+            --app-surface-2: #2C2C2E;
+            --app-surface-glass: rgba(28, 28, 30, 0.85);
+            --app-text: rgba(255, 255, 255, 0.92);
+            --app-text-sec: rgba(255, 255, 255, 0.60);
+            --app-border: rgba(255, 255, 255, 0.12);
+            --app-border-inner: rgba(255, 255, 255, 0.08);
+            --app-accent: #0A84FF;
+            --app-danger: #FF453A;
+            --app-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --segment-bg: rgba(118, 118, 128, 0.24);
+            --segment-indicator: #636366;
+            color-scheme: dark;
+        }
+
+        *, *::before, *::after {
+            transition-property: background-color, border-color, color, opacity, box-shadow, transform;
+            transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+            transition-duration: 250ms;
+        }
+
+        html, body {
+            height: 100%; width: 100%;
+            background-color: var(--app-bg);
+            color: var(--app-text);
+            -webkit-tap-highlight-color: transparent;
+            overflow: hidden;
+        }
+
+        /* --- UI Components --- */
+        .header-glass {
+            background: var(--app-surface-glass);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-bottom: 1px solid var(--app-border);
+            padding: 8px 0 12px 0;
+            display: flex; flex-direction: column; gap: 12px;
+            z-index: 50;
+        }
+
+        .top-bar { padding: 0 20px; height: 44px; display: flex; align-items: center; justify-content: space-between; }
+        .nav-bar { padding: 0 20px; }
+
+        .tool-strip {
+            display: flex; align-items: center; gap: 12px;
+            overflow-x: auto; padding: 0 20px; padding-bottom: 4px;
+            scrollbar-width: none;
+        }
+        .tool-strip::-webkit-scrollbar { display: none; }
+
+        .logo-mark {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--app-text) 0%, var(--app-text-sec) 100%);
+            color: var(--app-bg); display: flex; align-items: center; justify-content: center;
+        }
+
+        .btn-hero {
+            height: 36px; padding: 0 18px;
+            background: var(--app-accent); color: white;
+            border-radius: 100px; font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; gap: 6px;
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);
+            transition: transform 0.1s;
+        }
+        .btn-hero:active { transform: scale(0.96); }
+
+        .segment-container {
+            background-color: var(--segment-bg); padding: 3px;
+            border-radius: 10px; display: flex; position: relative; height: 38px; width: 100%;
+        }
+        .segment-pill {
+            position: absolute; top: 3px; left: 3px; bottom: 3px;
+            width: calc(50% - 3px); background: var(--segment-indicator);
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); z-index: 1;
+        }
+        .segment-item {
+            flex: 1; position: relative; z-index: 2; text-align: center;
+            font-size: 13px; font-weight: 500; line-height: 32px;
+            color: var(--app-text); opacity: 0.6; cursor: pointer;
+        }
+        .segment-item.active { font-weight: 600; opacity: 1; }
+
+        .tool-island {
+            display: flex; align-items: center; background: var(--app-surface-2);
+            padding: 4px; border-radius: 12px; gap: 2px; flex-shrink: 0;
+        }
+        .tool-btn {
+            width: 32px; height: 32px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--app-text); font-size: 18px; position: relative;
+        }
+        .tool-btn:active { background-color: rgba(0,0,0,0.05); }
+        .tool-btn.danger { color: var(--app-danger); }
+        .tool-btn.active-state { color: var(--app-accent); background-color: var(--app-surface); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+
+        .config-btn {
+            height: 32px; padding: 0 10px; border-radius: 8px;
+            display: flex; align-items: center; gap: 6px;
+            font-size: 12px; font-weight: 500; color: var(--app-text);
+            cursor: pointer;
+        }
+        .config-btn:active { background-color: rgba(0,0,0,0.05); }
+        
+        .island-divider { width: 1px; height: 16px; background-color: var(--app-border); margin: 0 2px; }
+
+        /* Main Stage */
+        .main-stage {
+            flex: 1; padding: 20px; display: flex; flex-direction: column;
+            align-items: center; overflow-y: auto;
+        }
+        .canvas-card {
+            background: var(--app-surface); border-radius: 24px;
+            box-shadow: var(--app-shadow);
+            width: 100%; max-width: 640px; height: 60vh; min-height: 400px;
+            position: relative; overflow: hidden;
+            border: 1px solid var(--app-border-inner);
+            display: flex; flex-direction: column;
+        }
+        @media (min-width: 768px) { .canvas-card { height: 650px; } }
+
+        .editor-bar {
+            height: 36px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 16px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border-inner);
+            transition: all 0.3s;
+        }
+        #editor {
+            flex: 1; padding: 16px; font-family: 'SF Mono', Menlo, monospace;
+            font-size: 13px; line-height: 1.6; background: transparent; outline: none; resize: none; color: var(--app-text);
+        }
+        #editor::placeholder { color: var(--app-text-sec); opacity: 0.5; }
+
+        /* Media Transition */
+        html.dark img, html.dark video { filter: brightness(0.85); transition: filter 0.3s; }
+
+        /* --- Preview Overlay Controls --- */
+        .preview-overlay-group {
+            position: absolute; top: 12px; right: 12px;
+            display: flex; gap: 8px; z-index: 20;
+        }
+
+        .overlay-btn {
+            width: 36px; height: 36px;
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--app-text);
+            opacity: 0.8;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(0,0,0,0.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        html.dark .overlay-btn {
+             background: rgba(40, 40, 40, 0.6);
+             border: 1px solid rgba(255,255,255,0.08);
+        }
+        .overlay-btn:hover { opacity: 1; transform: scale(1.05); }
+        .overlay-btn:active { transform: scale(0.95); }
+
+        /* Fullscreen State */
+        #view-preview.fullscreen-active {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            width: 100vw; height: 100vh;
+            z-index: 9999;
+            border-radius: 0; border: none;
+            background-color: var(--app-surface);
+        }
+        #view-preview.fullscreen-active .editor-bar { display: none !important; }
+        #view-preview.fullscreen-active #previewFrame { border-radius: 0; height: 100%; }
+
+        /* --- Modal System --- */
+        .modal-backdrop {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex; align-items: flex-end; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+        }
+        @media(min-width: 640px) { .modal-backdrop { align-items: center; } }
+        .modal-backdrop.active { opacity: 1; pointer-events: auto; }
+        
+        .modal-card {
+            background: var(--app-surface); width: 100%; max-width: 360px;
+            border-radius: 24px 24px 0 0;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.15);
+            transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow: hidden; display: flex; flex-direction: column; max-height: 80vh;
+        }
+        @media(min-width: 640px) { 
+            .modal-card { border-radius: 20px; transform: scale(0.95); opacity: 0; }
+        }
+        .modal-backdrop.active .modal-card { transform: translateY(0); }
+        @media(min-width: 640px) { 
+            .modal-backdrop.active .modal-card { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--app-border-inner); display: flex; justify-content: space-between; align-items: center; }
+        .modal-title { font-weight: 600; font-size: 16px; color: var(--app-text); }
+        .modal-close { width: 28px; height: 28px; border-radius: 50%; background: var(--app-surface-2); display: flex; align-items: center; justify-content: center; color: var(--app-text-sec); }
+        
+        .option-list { padding: 10px 16px 20px 16px; overflow-y: auto; }
+        .option-item { padding: 14px 12px; border-bottom: 1px solid var(--app-border-inner); font-size: 15px; color: var(--app-text); cursor: pointer; }
+        .option-item:last-child { border-bottom: none; }
+        .option-item:active { background: var(--app-surface-2); border-radius: 8px; }
+        .option-item.selected { color: var(--app-accent); font-weight: 600; }
+        
+        .modal-body-text { padding: 24px; text-align: center; color: var(--app-text-sec); font-size: 14px; line-height: 1.5; }
+        .modal-actions { display: flex; border-top: 1px solid var(--app-border-inner); }
+        .modal-action-btn { flex: 1; padding: 16px; text-align: center; font-size: 16px; color: var(--app-accent); background: transparent; cursor: pointer; }
+        .modal-action-btn:active { background: var(--app-surface-2); }
+        .modal-action-btn.danger { color: var(--app-danger); font-weight: 600; }
+
+    </style>
+</head>
+<body class="flex flex-col safe-area-inset">
+
+    <header class="header-glass flex-shrink-0">
+        <div class="top-bar">
+            <div class="flex items-center gap-3">
+                <div class="logo-mark"><i class="ph-bold ph-code"></i></div>
+                <h1 class="font-bold text-lg tracking-tight">HTML Studio</h1>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="toggleAppTheme()" class="w-9 h-9 rounded-full flex items-center justify-center text-app-text hover:bg-app-surface2 active:bg-app-surface2 transition-colors">
+                    <i id="appThemeIcon" class="ph-bold ph-sun text-xl"></i>
+                </button>
+                <button onclick="runPreview(true)" class="btn-hero">
+                    <i class="ph-bold ph-play"></i> <span>Run</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="nav-bar">
+            <div class="segment-container">
+                <div id="segIndicator" class="segment-pill transition-transform duration-300"></div>
+                <button onclick="switchView('code')" class="segment-item active" id="btn-code">Editor</button>
+                <button onclick="switchView('preview')" class="segment-item" id="btn-preview">Preview</button>
+            </div>
+        </div>
+
+        <div class="tool-strip">
+            <div class="tool-island">
+                <button onclick="document.getElementById('htmlFileInput').click()" class="tool-btn" title="导入"><i class="ph-bold ph-folder-open"></i></button>
+                <input type="file" id="htmlFileInput" accept=".html,.htm,.txt" class="hidden" onchange="handleFileUpload(this)">
+                <div class="island-divider"></div>
+                <button onclick="downloadHtml()" class="tool-btn" title="下载 HTML"><i class="ph-bold ph-download-simple"></i></button>
+                <button onclick="openExportModal()" class="tool-btn" title="导出设置"><i class="ph-bold ph-image"></i></button>
+                <!-- PDF Export Button -->
+                <button onclick="downloadPDF()" class="tool-btn" title="导出 PDF"><i class="ph-bold ph-file-pdf"></i></button>
+            </div>
+
+            <div class="tool-island">
+                <button onclick="undo()" class="tool-btn" title="撤回"><i class="ph-bold ph-arrow-u-up-left"></i></button>
+                <button onclick="requestClear()" class="tool-btn danger" title="清空"><i class="ph-bold ph-trash"></i></button>
+            </div>
+
+            <div class="tool-island px-2">
+                <button onclick="openEngineModal()" class="config-btn">
+                    <i class="ph-bold ph-gear"></i><span id="engineLabel">Native</span>
+                </button>
+                <div class="island-divider"></div>
+                <button onclick="openFontModal()" class="config-btn">
+                    <i class="ph-bold ph-text-aa"></i><span id="fontLabel">默认</span>
+                </button>
+                <input type="file" id="fontFileInput" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleCustomFontUpload(this)">
+                <div class="island-divider"></div>
+                <button onclick="toggleContentTheme()" class="tool-btn" id="contentThemeBtn" title="内容深浅色">
+                    <i id="contentThemeIcon" class="ph-fill ph-sun"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-stage">
+        <div class="canvas-card">
+            <div id="view-code" class="flex-1 flex flex-col w-full">
+                <div class="editor-bar">
+                    <span class="text-[10px] font-bold text-app-textSec uppercase tracking-widest">SOURCE</span>
+                    <span id="charCount" class="text-[10px] text-app-textSec font-mono">0</span>
+                </div>
+                <textarea id="editor" spellcheck="false" placeholder="<!-- Start typing your HTML here -->"></textarea>
+            </div>
+
+            <div id="view-preview" class="hidden flex-1 flex-col w-full h-full relative">
+                 <div class="editor-bar justify-center">
+                    <div class="flex items-center gap-1.5 text-[10px] font-medium text-app-textSec">
+                        <i class="ph-fill ph-lock-key"></i> localhost
+                    </div>
+                </div>
+                
+                <!-- Overlay Controls -->
+                <div class="preview-overlay-group">
+                    <button onclick="quickScreenshot()" class="overlay-btn" title="一键截图 (3x)">
+                        <i class="ph-bold ph-camera"></i>
+                    </button>
+                    <button onclick="toggleFullscreen()" class="overlay-btn" title="全屏 (双击退出)">
+                        <i id="fsIcon" class="ph-bold ph-arrows-out-simple"></i>
+                    </button>
+                </div>
+
+                <iframe id="previewFrame" class="flex-1 w-full h-full border-0 bg-white transition-all duration-300" sandbox="allow-scripts allow-modals allow-forms"></iframe>
+            </div>
+        </div>
+    </main>
+
+    <!-- UI Components -->
+    <div id="toast" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-800/90 dark:bg-zinc-100/90 backdrop-blur-xl text-white dark:text-black px-6 py-3 rounded-2xl text-sm font-medium opacity-0 pointer-events-none transition-all duration-300 z-[100] shadow-2xl scale-95">Ready</div>
+
+    <!-- Universal Modal -->
+    <div id="uniModalBackdrop" class="modal-backdrop" onclick="closeUniModal(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div id="uniModalTitle" class="modal-title">Title</div>
+                <button onclick="closeUniModal()" class="modal-close"><i class="ph-bold ph-x"></i></button>
+            </div>
+            <div id="uniModalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Core Variables ---
+        const editor = document.getElementById('editor');
+        const iframe = document.getElementById('previewFrame');
+        const toast = document.getElementById('toast');
+        const htmlRoot = document.documentElement;
+        
+        const uniModalBackdrop = document.getElementById('uniModalBackdrop');
+        const uniModalTitle = document.getElementById('uniModalTitle');
+        const uniModalContent = document.getElementById('uniModalContent');
+
+        let appTheme = 'light';
+        let contentTheme = 'light'; 
+        let currentEngine = 'native';
+        let currentFont = 'default';
+        
+        let customFontData = null;
+        let customFontName = 'CustomFont';
+        
+        let historyStack = [];
+        let historyIndex = -1;
+        let debounceTimer;
+
+        // --- Demo Code ---
+        const codeNative = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+  .card { padding: 32px; background: #fff; border-radius: 20px; text-align: center; width: 100%; max-width: 340px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
+  .img-holder { width: 100%; height: 180px; background-color: #eee; margin-bottom: 20px; border-radius: 12px; }
+  /* Demo Image - works perfectly with html-to-image */
+  img { width: 100%; height: 180px; object-fit: cover; border-radius: 12px; margin-bottom: 20px; }
+  h2 { margin: 0 0 12px; font-weight: 700; color: #000; font-size: 22px; }
+  p { color: #666; line-height: 1.5; font-size: 15px; margin-bottom: 24px; }
+  .btn { background: #0071E3; color: white; padding: 12px 0; width: 100%; border-radius: 14px; font-size: 15px; font-weight: 600; border: none; cursor: pointer; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.9; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop" alt="Abstract">
+    <h2>Pixel Perfect</h2>
+    <p>We now use a modern SVG-based rendering engine. Shadows, gradients, and fonts are 100% accurate.</p>
+    <button class="btn">Download</button>
+  </div>
+</body>
+</html>`;
+
+        // --- Init ---
+        editor.value = codeNative;
+        saveHistory();
+        updateCharCount();
+        runPreview();
+
+        editor.addEventListener('input', () => {
+            updateCharCount();
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => { saveHistory(); }, 500);
+        });
+
+        window.addEventListener('message', (e) => {
+            if (e.data === 'preview-dblclick') {
+                const view = document.getElementById('view-preview');
+                if (view.classList.contains('fullscreen-active')) {
+                    toggleFullscreen();
+                }
+            }
+        });
+
+        // --- Fullscreen & Screenshot ---
+        function toggleFullscreen() {
+            const view = document.getElementById('view-preview');
+            const icon = document.getElementById('fsIcon');
+            
+            if (view.classList.contains('fullscreen-active')) {
+                view.classList.remove('fullscreen-active');
+                icon.className = 'ph-bold ph-arrows-out-simple';
+            } else {
+                view.classList.add('fullscreen-active');
+                icon.className = 'ph-bold ph-arrows-in-simple';
+                showToast('双击屏幕退出全屏');
+            }
+        }
+        
+        function quickScreenshot() {
+            renderHighQualityImage(3); // 3x Ultra Quality
+        }
+
+        // --- Universal Modal System ---
+        function openUniModal(title, contentHTML) {
+            uniModalTitle.innerText = title;
+            uniModalContent.innerHTML = contentHTML;
+            uniModalBackdrop.classList.add('active');
+        }
+
+        function closeUniModal(e) {
+            if(e && e.target !== uniModalBackdrop) return;
+            uniModalBackdrop.classList.remove('active');
+        }
+
+        function buildOptionList(options, selectedValue, clickHandlerName) {
+            return `<div class="option-list">
+                ${options.map(opt => `
+                    <div class="option-item ${opt.value === selectedValue ? 'selected' : ''}" 
+                         onclick="${clickHandlerName}('${opt.value}', '${opt.label}')">
+                        ${opt.label}
+                    </div>
+                `).join('')}
+            </div>`;
+        }
+
+        // --- Config Modals ---
+        function openEngineModal() {
+            const options = [
+                { value: 'native', label: 'Native' },
+                { value: 'blink', label: 'Blink (Chrome)' },
+                { value: 'webkit', label: 'WebKit (Safari)' },
+                { value: 'jinja2', label: 'Jinja2 Template' }
+            ];
+            openUniModal('渲染引擎', buildOptionList(options, currentEngine, 'selectEngine'));
+        }
+
+        function selectEngine(val, label) {
+            currentEngine = val;
+            document.getElementById('engineLabel').innerText = label;
+            closeUniModal();
+            runPreview(true);
+        }
+
+        function openFontModal() {
+            const options = [
+                { value: 'default', label: '系统默认' },
+                { value: 'sans', label: 'Sans-Serif (黑体)' },
+                { value: 'serif', label: 'Serif (宋体/衬线)' },
+                { value: 'mono', label: 'Monospace (等宽)' },
+                { value: 'custom', label: '自定义字体...' }
+            ];
+            openUniModal('字体选择', buildOptionList(options, currentFont, 'selectFont'));
+        }
+
+        function selectFont(val, label) {
+            if(val === 'custom') {
+                document.getElementById('fontFileInput').click();
+                closeUniModal();
+                return;
+            }
+            currentFont = val;
+            document.getElementById('fontLabel').innerText = label;
+            closeUniModal();
+            runPreview(true);
+        }
+
+        function openExportModal() {
+             const options = [
+                { value: 1, label: '1x 分辨率' },
+                { value: 2, label: '2x 分辨率 (Retina)' },
+                { value: 3, label: '3x 分辨率 (Ultra)' }
+            ];
+            openUniModal('导出图片', buildOptionList(options, 2, 'handleExportOption'));
+        }
+
+        function handleExportOption(val) {
+            closeUniModal();
+            renderHighQualityImage(parseInt(val));
+        }
+
+        // --- Theme ---
+        function toggleAppTheme() {
+            appTheme = appTheme === 'light' ? 'dark' : 'light';
+            const icon = document.getElementById('appThemeIcon');
+            if (appTheme === 'dark') {
+                htmlRoot.classList.add('dark');
+                icon.className = 'ph-bold ph-moon text-xl';
+            } else {
+                htmlRoot.classList.remove('dark');
+                icon.className = 'ph-bold ph-sun text-xl';
+            }
+        }
+
+        function toggleContentTheme() {
+            contentTheme = contentTheme === 'light' ? 'dark' : 'light';
+            const btn = document.getElementById('contentThemeBtn');
+            const icon = document.getElementById('contentThemeIcon');
+            
+            if (contentTheme === 'dark') {
+                btn.classList.add('active-state');
+                icon.className = 'ph-fill ph-moon';
+                showToast('内容: 深色模式');
+            } else {
+                btn.classList.remove('active-state');
+                icon.className = 'ph-fill ph-sun';
+                showToast('内容: 浅色模式');
+            }
+            runPreview(true);
+        }
+
+        function getSmartStyles(theme) {
+            if (theme === 'dark') {
+                return `
+                    :root { color-scheme: dark; --bg-base: #050505; --bg-surface-1: #1C1C1E; --bg-surface-2: #2C2C2E; --text-primary: rgba(255, 255, 255, 0.92); --text-secondary: rgba(255, 255, 255, 0.60); --border-inner: 1px solid rgba(255, 255, 255, 0.08); --accent-color: #409CFF; }
+                    body { background-color: var(--bg-base) !important; color: var(--text-primary) !important; }
+                    .card, .box, .modal, .container, section, article, header, footer { background-color: var(--bg-surface-1) !important; box-shadow: none !important; border: var(--border-inner) !important; color: var(--text-primary) !important; }
+                    input, textarea, select, button.secondary { background-color: var(--bg-surface-2) !important; color: var(--text-primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; }
+                    h1, h2, h3, h4, h5, h6, strong, b { color: var(--text-primary) !important; }
+                    p, span, div, li { color: inherit; }
+                    .text-muted, .subtitle { color: var(--text-secondary) !important; }
+                    img, video, iframe { opacity: 0.9; filter: brightness(0.9); transition: all 0.3s; }
+                    img:hover, video:hover { opacity: 1; filter: brightness(1); }
+                `;
+            } else {
+                return `:root { color-scheme: light; --bg-base: #FFFFFF; --text-primary: #1D1D1F; } body { background-color: var(--bg-base); color: var(--text-primary); }`;
+            }
+        }
+
+        function getFinalRenderHtml(code, engine, theme, fontType, isExport = false) {
+            let finalHtml = code;
+            if (engine === 'jinja2' && typeof nunjucks !== 'undefined') {
+                nunjucks.configure({ autoescape: true });
+                try { finalHtml = nunjucks.renderString(code, { title: "HTML Studio", theme: theme }); } catch(e) {}
+            }
+
+            const algorithmCSS = getSmartStyles(theme);
+            let fontCSS = "";
+            let overrideFont = "";
+            
+            if (fontType === 'custom' && customFontData) {
+                const cleanData = customFontData.trim();
+                fontCSS += `@font-face { font-family: '${customFontName}'; src: url('${cleanData}') format('truetype'); font-weight: normal; font-style: normal; }`;
+                overrideFont = `'${customFontName}', sans-serif`;
+            } else if (fontType === 'mono') overrideFont = '"SF Mono", Menlo, monospace';
+            else if (fontType === 'serif') overrideFont = '"New York", "Songti SC", serif';
+            
+            if (overrideFont) fontCSS += ` * { font-family: ${overrideFont} !important; } `;
+
+            let wrapperStart = "";
+            let wrapperEnd = "";
+            let scriptInjection = "";
+            
+            if (isExport) {
+                const bgCol = theme === 'dark' ? '#050505' : '#FFFFFF';
+                // Strict sizing for wrapper
+                wrapperStart = `<div id="export-wrapper" style="background-color: ${bgCol}; width: 375px; min-height: 100vh; position: relative; overflow: hidden; margin: 0 auto; box-sizing: border-box;">`;
+                wrapperEnd = `</div>`;
+                
+                // Inject Hidden Font Pre-warmer
+                if (fontType === 'custom') {
+                    wrapperEnd += `<div style="font-family:'${customFontName}'; visibility:hidden; height:0; width:0; overflow:hidden;">.</div>`;
+                }
+            } else {
+                scriptInjection = `<script>window.addEventListener('dblclick', function() { window.parent.postMessage('preview-dblclick', '*'); });<\/script>`;
+            }
+
+            const styleBlock = `<style id="studio-inject">${fontCSS} ${algorithmCSS} ::-webkit-scrollbar { display: none; } body { margin: 0; min-height: 100vh; overflow-x: hidden; transition: background-color 0.25s, color 0.25s; }</style>`;
+
+            if (finalHtml.includes('<body')) {
+                 finalHtml = finalHtml.replace(/<body[^>]*>/, (match) => match + wrapperStart);
+                 finalHtml = finalHtml.replace('</body>', wrapperEnd + styleBlock + scriptInjection + '</body>');
+            } else {
+                 finalHtml = wrapperStart + finalHtml + wrapperEnd + styleBlock + scriptInjection;
+            }
+
+            return finalHtml;
+        }
+
+        function runPreview(manual = false) {
+            const finalHtml = getFinalRenderHtml(editor.value, currentEngine, contentTheme, currentFont, false);
+            iframe.srcdoc = finalHtml;
+            if (manual && window.innerWidth < 768) switchView('preview');
+        }
+
+        // --- NEW Export Function using html-to-image (SVG foreignObject) ---
+        async function renderHighQualityImage(scale) {
+            showToast('正在生成 (SVG算法)...', 5000);
+            // 给UI一点喘息时间
+            await new Promise(r => setTimeout(r, 100));
+
+            try {
+                const exportBgColor = contentTheme === 'dark' ? '#050505' : '#FFFFFF';
+                const WIDTH = 375; 
+
+                // 1. Setup Invisible Iframe to render content "purely"
+                const iframeClone = document.createElement('iframe');
+                iframeClone.style.cssText = `position:fixed; top:-9999px; left:-9999px; width:${WIDTH}px; height:1500px; border:none; z-index:-9999; visibility:hidden;`;
+                document.body.appendChild(iframeClone);
+
+                // 2. Write HTML
+                const finalHtml = getFinalRenderHtml(editor.value, currentEngine, contentTheme, currentFont, true);
+                const doc = iframeClone.contentDocument || iframeClone.contentWindow.document;
+                doc.open(); doc.write(finalHtml); doc.close();
+
+                // 3. Wait for content load
+                await new Promise(r => { iframeClone.onload = r; setTimeout(r, 1000); });
+
+                // 4. Force Font Load (Crucial for html-to-image)
+                if (currentFont === 'custom' && customFontData) {
+                    try {
+                        const fontCheck = new FontFace(customFontName, `url(${customFontData})`);
+                        await fontCheck.load();
+                        doc.fonts.add(fontCheck);
+                        await doc.fonts.ready;
+                    } catch(e) { console.log('Font fallback', e); }
+                }
+
+                // 5. No need for aggressive DOM manipulation anymore (html-to-image handles standard DOM better)
+                // Just getting the wrapper
+                const wrapper = doc.getElementById('export-wrapper') || doc.body;
+                
+                // Adjust iframe to fit content exactly to avoid whitespace
+                const height = Math.max(wrapper.scrollHeight, 600);
+                iframeClone.style.height = height + 'px';
+                doc.body.style.height = height + 'px';
+
+                // 6. CAPTURE using htmlToImage
+                const dataUrl = await htmlToImage.toPng(wrapper, {
+                    width: WIDTH,
+                    height: height,
+                    backgroundColor: exportBgColor,
+                    pixelRatio: scale, // Handles the HD export
+                    cacheBust: true,   // Helps with CORS images
+                    style: {
+                        transform: 'scale(1)', // Reset any potential transforms
+                        transformOrigin: 'top left'
+                    }
+                });
+
+                // 7. Download
+                const link = document.createElement('a');
+                link.download = `Studio-SVG-${scale}x-${Date.now()}.png`;
+                link.href = dataUrl;
+                link.click();
+                
+                document.body.removeChild(iframeClone);
+                showToast('已保存图片');
+
+            } catch (err) {
+                console.error(err);
+                showToast('截图失败: 请检查图片跨域');
+            }
+        }
+        
+        // --- NEW PDF Export Function (Fixes size and cutoff issues) ---
+        async function downloadPDF() {
+            showToast('正在生成 PDF...', 5000);
+            await new Promise(r => setTimeout(r, 100));
+
+            try {
+                // Reuse logic to render clean image first
+                const exportBgColor = contentTheme === 'dark' ? '#050505' : '#FFFFFF';
+                const WIDTH = 375;
+
+                const iframeClone = document.createElement('iframe');
+                iframeClone.style.cssText = `position:fixed; top:-9999px; left:-9999px; width:${WIDTH}px; height:1500px; border:none; z-index:-9999; visibility:hidden;`;
+                document.body.appendChild(iframeClone);
+
+                const finalHtml = getFinalRenderHtml(editor.value, currentEngine, contentTheme, currentFont, true);
+                const doc = iframeClone.contentDocument || iframeClone.contentWindow.document;
+                doc.open(); doc.write(finalHtml); doc.close();
+
+                await new Promise(r => { iframeClone.onload = r; setTimeout(r, 1000); });
+
+                if (currentFont === 'custom' && customFontData) {
+                    try {
+                        const fontCheck = new FontFace(customFontName, `url(${customFontData})`);
+                        await fontCheck.load();
+                        doc.fonts.add(fontCheck);
+                        await doc.fonts.ready;
+                    } catch(e) {}
+                }
+
+                const wrapper = doc.getElementById('export-wrapper') || doc.body;
+                const height = Math.max(wrapper.scrollHeight, 600);
+                iframeClone.style.height = height + 'px';
+                doc.body.style.height = height + 'px';
+
+                // --- FIX 2: Canvas Size Safety Check ---
+                // Browsers have hard limits on Canvas height. 
+                // E.g., if height is 8000px and we use scale 2, total is 16000px, which might fail on some GPUs.
+                // We check if the target pixels exceed a safety threshold (e.g. 14000px).
+                let scale = 2; // Default high quality
+                const SAFE_PIXEL_LIMIT = 14000;
+                
+                if ((height * scale) > SAFE_PIXEL_LIMIT) {
+                    scale = 1; // Downgrade scale to ensure content is fully rendered
+                    showToast('内容过长，自动适配清晰度', 3000);
+                }
+
+                // --- FIX 1: Use JPEG instead of PNG for drastically smaller PDF size ---
+                const dataUrl = await htmlToImage.toJpeg(wrapper, {
+                    width: WIDTH,
+                    height: height,
+                    backgroundColor: exportBgColor,
+                    pixelRatio: scale,
+                    quality: 0.95, // High quality JPEG is much smaller than PNG
+                    cacheBust: true,
+                    style: { transform: 'scale(1)', transformOrigin: 'top left' }
+                });
+
+                // PDF Generation
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'px', [WIDTH * scale, height * scale]);
+                
+                // Embed as JPEG
+                pdf.addImage(dataUrl, 'JPEG', 0, 0, WIDTH * scale, height * scale);
+                pdf.save(`Studio-Export-${Date.now()}.pdf`);
+
+                document.body.removeChild(iframeClone);
+                showToast('已保存 PDF');
+
+            } catch (err) {
+                console.error(err);
+                showToast('PDF 生成失败');
+            }
+        }
+        
+        function handleCustomFontUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+            showToast('Loading font...');
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                customFontData = e.target.result;
+                document.getElementById('fontLabel').innerText = "Custom";
+                currentFont = 'custom';
+                runPreview(true);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function updateCharCount() { document.getElementById('charCount').innerText = editor.value.length; }
+        
+        function showToast(msg, duration = 2000) {
+            toast.innerText = msg;
+            toast.classList.remove('opacity-0', 'scale-95');
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => { toast.classList.add('opacity-0', 'scale-95'); }, duration);
+        }
+
+        function saveHistory() {
+            const current = editor.value;
+            if (historyIndex > -1 && historyStack[historyIndex] === current) return;
+            historyStack.push(current);
+            if (historyStack.length > 50) historyStack.shift();
+            else historyIndex++;
+        }
+
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                editor.value = historyStack[historyIndex];
+                updateCharCount();
+                runPreview(false);
+                showToast('已撤回');
+            }
+        }
+        
+        function requestClear() {
+            openUniModal('清空代码', `<div class="modal-body-text">确定要清空所有代码吗？</div><div class="modal-actions"><button class="modal-action-btn" onclick="closeUniModal()">取消</button><button class="modal-action-btn danger" onclick="confirmClear()">清空</button></div>`);
+        }
+        
+        function confirmClear() {
+            editor.value = '';
+            updateCharCount();
+            saveHistory();
+            runPreview(false);
+            showToast('已清空');
+            closeUniModal();
+        }
+
+        function switchView(view) {
+            const segIndicator = document.getElementById('segIndicator');
+            const btnCode = document.getElementById('btn-code');
+            const btnPreview = document.getElementById('btn-preview');
+            const viewCode = document.getElementById('view-code');
+            const viewPreview = document.getElementById('view-preview');
+
+            if (view === 'code') {
+                segIndicator.style.transform = 'translateX(0%)';
+                btnCode.classList.add('active');
+                btnPreview.classList.remove('active');
+                viewCode.classList.remove('hidden');
+                viewPreview.classList.add('hidden');
+                viewCode.style.display = 'flex';
+                viewPreview.style.display = 'none';
+            } else {
+                segIndicator.style.transform = 'translateX(100%)';
+                btnCode.classList.remove('active');
+                btnPreview.classList.add('active');
+                viewCode.classList.add('hidden');
+                viewCode.style.display = 'none';
+                viewPreview.classList.remove('hidden');
+                viewPreview.style.display = 'flex';
+                runPreview(false);
+            }
+        }
+
+        function handleFileUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                editor.value = e.target.result;
+                updateCharCount();
+                saveHistory();
+                showToast('已导入');
+                runPreview(true);
+                input.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function downloadHtml() {
+            const blob = new Blob([editor.value], {type: 'text/html'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'index.html'; a.click();
+        }
+    </script>
+</body>
+</html>
+
+
